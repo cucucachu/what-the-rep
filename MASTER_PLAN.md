@@ -54,6 +54,7 @@ so the hard design problems get solved once, on real data, rather than deferred.
 | Database | **MongoDB Atlas** (managed) | Built-in Atlas Vector Search + Atlas Search (full text) + geospatial (`2dsphere`) in one product; free/dev tier is enough to start. |
 | Embeddings | **Self-managed, local open-source model** (e.g. BAAI/BGE or `sentence-transformers` family), vectors stored in our own documents and indexed with **Atlas Vector Search** | Zero per-query API cost, no external API key dependency, fully reproducible offline. Atlas's own "Automated Embedding" (Voyage AI, public preview as of May 2026) was considered but rejected for now to avoid Public-Preview risk and per-token cost; the embedding generation step is built as a pluggable interface so we can swap in a hosted model (or Atlas Automated Embedding) later without a schema change. |
 | Backend | **Python**, MCP server built on **FastMCP** (the de facto standard Python MCP framework, now merged into the official MCP Python SDK lineage) | Decorator-based tools/resources/prompts, built-in support for MCP Apps-style UI resources, async-first, good ecosystem for the scraping/parsing/NLP work ingestion needs. |
+| Python package manager | **`uv`** (Astral) for dependency management, virtualenvs, and running scripts/tests (`uv sync`, `uv run pytest`, `uv add <pkg>`), with `pyproject.toml` + a committed `uv.lock` as the source of truth for both the `backend/` package and any top-level `scripts/` | Single fast tool for venv + resolution + lockfile + running commands, avoids juggling `pip`/`venv`/`pip-tools` separately; reproducible installs via the lockfile across dev machines and CI. |
 | UI delivery from backend | **MCP Apps / MCP-UI** (`ui://` resources, `_meta.ui.resourceUri` on tools, `text/html;profile=mcp-app` resources) via Python `mcp-ui-server` helpers | Officially standardized in 2026 (SEP-1865), backed by the MCP-UI project; lets the backend ship real interactive widgets (charts, timelines) that render identically in our own frontend and in any other MCP Apps-capable host (Claude, etc.). |
 | Frontend | **React + TypeScript**, working **entirely through MCP** — the app is a custom MCP Host/Client (Streamable HTTP transport), using `@mcp-ui/client`'s `AppRenderer`/`UIResourceRenderer` to render UI resources, and plain React components to render structured tool output for simple views | Satisfies the "one backend for everyone" principle; avoids building/maintaining a second REST API surface. |
 | Deployment (v1) | **Local/dev only** — Docker Compose for backend + frontend; MongoDB stays on Atlas (cloud) even in dev since we're using Atlas Vector Search | Fastest path to a working pilot; revisit real hosting (Fly.io/Render/GCP/etc.) once the pilot is validated. |
@@ -61,6 +62,7 @@ so the hard design problems get solved once, on real data, rather than deferred.
 | Geography bootstrap | **Marin County, CA + its 11 incorporated cities/towns** (Belvedere, Corte Madera, Fairfax, Larkspur, Mill Valley, Novato, Ross, San Anselmo, San Rafael, Sausalito, Tiburon), plus Marin County itself and stub records for California and the United States | Concrete, well-documented, small (~13 jurisdictions), and we already have real reference data on Novato + Marin County from this session's research to validate the schema against. |
 | Agentic layer | **LangChain `deepagents`** (a LangGraph-based agent harness) running server-side in the Python backend, consuming our *own* MCP tools via `langchain-mcp-adapters`' `MultiServerMCPClient`, and exposed back out as a single **`ask_agent`** MCP tool. LLM provider: **Anthropic Claude API**, key held server-side only, never sent to the browser. | Gives a production-grade agent loop (planning, sub-agents, context management, human-in-the-loop tool approval) without hand-rolling one, and keeps the "one backend, one MCP interface" principle intact — the frontend never talks to Claude directly or holds a key, it just calls one more tool. Confirmed during research: Anthropic has no ephemeral/scoped-token mechanism for the plain Messages API usable by anonymous browser sessions (Workload Identity Federation only federates a *workload's own* cloud IdP identity), so a public, no-auth app cannot safely call Claude directly from the browser with our key. See §8. |
 | Rate limiting / abuse prevention | **Tiered, IP-keyed rate limiting** at the MCP server's HTTP layer (in-memory token buckets for the v1 single-instance deployment), plus a **persisted daily budget cap** for `ask_agent` stored in MongoDB. Expensive/mutating tools (`trigger_ingestion`, future `propose_new_jurisdiction`) are disabled or admin-gated, not publicly callable. | We have no accounts to attach per-user limits to, and `ask_agent` calls a paid API — needs abuse/runaway-cost protection from day one, not bolted on after a bill shock. See §9. |
+| Testing | **Backend**: `pytest` + `pytest-asyncio`; `mongomock` or a dockerized MongoDB instance for DB-touching tests; recorded HTML/PDF fixtures (VCR-style) for scraper/adapter tests, so parsing logic is tested against real captured markup without live network calls in CI. **Frontend**: `Vitest` + React Testing Library for component/unit tests; `Playwright` for end-to-end/integration tests against a real running backend. | Locked in during MVP issue-planning (2026-07-06) so every implementation ticket has an unambiguous, consistent testing convention from the start. |
 
 ## 4. System Architecture
 
@@ -413,9 +415,13 @@ React + TypeScript SPA that is itself an MCP Host/Client (Streamable HTTP transp
   resource returned by a tool call.
 - Plain React components/routes render structured (non-UI-resource) tool output for jurisdiction browsing,
   search, and navigation.
-- **Home page flow**: get the user's location (browser Geolocation API if permitted, else a manual
-  city/address entry field — no IP-based inference by default, to avoid a hidden network dependency) →
-  call `resolve_location` → call `get_home_summary` → render the returned UI resource.
+- **Home page flow**: get the user's location — **browser Geolocation API first** (if permitted), **then
+  IP-based geolocation as an automatic fallback** (revised 2026-07-06; supersedes the original "no IP-based
+  inference by default" stance since a fully manual flow was judged too much friction for the home-page
+  first-run experience), **then a manual city/address entry field** as the last resort if both fail — →
+  call `resolve_location` → call `get_home_summary` → render the returned UI resource. Revisit this if
+  IP-based geolocation proves too inaccurate in practice (it's typically city/ZIP-level, which is enough to
+  resolve a city/county but not precise enough for, e.g., district-level jurisdiction lookups).
 - **Agentic mode**: a minimal chat-style affordance that calls `ask_agent` like any other tool — no separate
   client, no separate connection, no awareness that an LLM is involved on the other end.
 
@@ -486,8 +492,10 @@ expanding scope is additive, not a redesign:
 ## 15. Open Questions (revisit as we build)
 
 - Exact chunking strategy for embeddings (size/overlap) — decide during Phase 3 against real ingested text.
-- Whether `boundary` geometries come from US Census TIGER/Line shapefiles or another authoritative source —
-  decide during Phase 1 implementation of `resolve_location`.
+- ~~Whether `boundary` geometries come from US Census TIGER/Line shapefiles or another authoritative source~~
+  — **decided (2026-07-06): US Census TIGER/Line shapefiles**, loaded for Novato + Marin County for the MVP
+  scope; revisit only if TIGER/Line proves insufficient (e.g. missing/inaccurate boundaries) when expanding
+  to the rest of Marin's cities/towns in Phase 2.
 - Long-term hosting target (Phase 7+) — deferred per the local/dev-first decision, but real hosting must bring
   CDN/WAF-level DDoS protection and a shared (Redis) rate-limit store, not just app-level limiting (§9).
 - Whether/when to add Atlas Automated Embedding as an alternative `EmbeddingProvider` once it exits Public
@@ -515,7 +523,7 @@ what-the-rep/
       models/            # Pydantic schemas mirroring §5, incl. agent_usage_daily
     embeddings/          # local embedding model wrapper (EmbeddingProvider interface)
     tests/
-    pyproject.toml
+    pyproject.toml      # dependencies managed with uv; uv.lock committed alongside
   frontend/
     src/
       mcp-client/        # MCP Streamable HTTP client wrapper

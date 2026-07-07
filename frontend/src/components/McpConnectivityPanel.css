@@ -1,0 +1,117 @@
+.mcp-panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #d8dee9;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.mcp-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.mcp-panel h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+}
+
+.mcp-panel__url {
+  margin: 0;
+  color: #475569;
+  font-size: 0.875rem;
+  word-break: break-all;
+}
+
+.mcp-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mcp-panel__status {
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.mcp-panel__status--idle {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.mcp-panel__status--connecting {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.mcp-panel__status--connected {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.mcp-panel__status--error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.mcp-panel button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.5rem 0.875rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mcp-panel button:hover {
+  background: #f1f5f9;
+}
+
+.mcp-panel__error {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.mcp-panel__loading {
+  margin: 1rem 0 0;
+  color: #475569;
+}
+
+.mcp-panel__section {
+  margin-top: 1.25rem;
+}
+
+.mcp-panel__section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.mcp-panel__tool-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.mcp-panel__tool-desc {
+  color: #475569;
+}
+
+.mcp-panel__json {
+  margin: 0;
+  padding: 0.875rem;
+  overflow: auto;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}

@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 from mcp_server.config import ServerSettings, load_settings
 from mcp_server.middleware.http_limits import build_hygiene_middleware
 from mcp_server.middleware.rate_limiter import RateLimitWindow, SlidingWindowRateLimiter
+from mcp_server.tools import register_readonly_tools
 
 MCP_SERVER_NAME = "what-the-rep"
 
@@ -18,6 +19,8 @@ def create_mcp() -> FastMCP:
     def ping() -> dict[str, str]:
         """Health check — confirms the MCP server is reachable."""
         return {"status": "ok"}
+
+    register_readonly_tools(mcp)
 
     return mcp
 

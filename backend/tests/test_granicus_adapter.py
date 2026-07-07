@@ -84,9 +84,7 @@ def test_agenda_item_i1_title(meeting_detail) -> None:
 
 
 def test_non_unanimous_roll_call_on_resolution_2024_011(meeting_detail) -> None:
-    motion = next(
-        m for m in meeting_detail.motions if m.resolution_number == "2024-011"
-    )
+    motion = next(m for m in meeting_detail.motions if m.resolution_number == "2024-011")
     expected = RESOLUTION_2024_011_MOTION
 
     assert expected["description_prefix"] in motion.description

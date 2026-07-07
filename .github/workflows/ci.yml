@@ -10,6 +10,11 @@ jobs:
   backend:
     name: Backend (uv + pytest)
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
     defaults:
       run:
         working-directory: backend
@@ -30,6 +35,8 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+        env:
+          MONGODB_URI: mongodb://localhost:27017
 
   frontend:
     name: Frontend (Vitest)

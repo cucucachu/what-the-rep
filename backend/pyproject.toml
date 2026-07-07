@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "fastmcp>=2.0",
+    "mcp-ui-server>=1.0.0",
     "motor>=3.7.1",
     "pdfplumber>=0.11.10",
     "pydantic>=2.13.4",

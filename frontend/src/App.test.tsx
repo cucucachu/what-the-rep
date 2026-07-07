@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
 import App from "./App";
 
 vi.mock("./pages/HomePage.js", () => ({
@@ -20,6 +21,10 @@ describe("App", () => {
       screen.getByRole("heading", { name: /what the rep/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/home page/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /search/i })).toHaveAttribute(
+      "href",
+      "/search",
+    );
     expect(
       screen.queryByLabelText(/mcp connectivity probe/i),
     ).not.toBeInTheDocument();

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { WhatTheRepMcpClient } from "../mcp/client.js";
+import { useOptionalMcpClient } from "../mcp/McpClientContext.js";
 import { McpWidget } from "../components/McpWidget.js";
 import "./HomePage.css";
 
@@ -41,9 +42,10 @@ const initialPromptPhase: Extract<LocationPhase, { kind: "prompt" }> = {
 };
 
 export function HomePage({ client: clientProp }: HomePageProps) {
+  const contextClient = useOptionalMcpClient();
   const client = useMemo(
-    () => clientProp ?? new WhatTheRepMcpClient(),
-    [clientProp],
+    () => clientProp ?? contextClient ?? new WhatTheRepMcpClient(),
+    [clientProp, contextClient],
   );
   const [phase, setPhase] = useState<LocationPhase>(initialPromptPhase);
   const [manualLat, setManualLat] = useState("");

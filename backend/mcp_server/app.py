@@ -7,7 +7,7 @@ from fastmcp import FastMCP
 from mcp_server.config import ServerSettings, load_settings
 from mcp_server.middleware.http_limits import build_hygiene_middleware
 from mcp_server.middleware.rate_limiter import RateLimitWindow, SlidingWindowRateLimiter
-from mcp_server.tools import register_readonly_tools
+from mcp_server.tools import register_home_summary_tools, register_readonly_tools
 from mcp_server.ui.demo import register_debug_ui_demo_if_enabled
 
 MCP_SERVER_NAME = "what-the-rep"
@@ -22,6 +22,7 @@ def create_mcp() -> FastMCP:
         return {"status": "ok"}
 
     register_readonly_tools(mcp)
+    register_home_summary_tools(mcp)
     register_debug_ui_demo_if_enabled(mcp)
 
     return mcp

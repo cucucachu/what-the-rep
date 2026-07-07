@@ -59,6 +59,8 @@ so the hard design problems get solved once, on real data, rather than deferred.
 | Deployment (v1) | **Local/dev only** — Docker Compose for backend + frontend; MongoDB stays on Atlas (cloud) even in dev since we're using Atlas Vector Search | Fastest path to a working pilot; revisit real hosting (Fly.io/Render/GCP/etc.) once the pilot is validated. |
 | Auth | **None for v1** — fully public, read-only | The data is public-record by nature; no need to gate reading it. Personalization (saved location, watchlists, alerts) is a later phase that will introduce accounts. |
 | Geography bootstrap | **Marin County, CA + its 11 incorporated cities/towns** (Belvedere, Corte Madera, Fairfax, Larkspur, Mill Valley, Novato, Ross, San Anselmo, San Rafael, Sausalito, Tiburon), plus Marin County itself and stub records for California and the United States | Concrete, well-documented, small (~13 jurisdictions), and we already have real reference data on Novato + Marin County from this session's research to validate the schema against. |
+| Agentic layer | **LangChain `deepagents`** (a LangGraph-based agent harness) running server-side in the Python backend, consuming our *own* MCP tools via `langchain-mcp-adapters`' `MultiServerMCPClient`, and exposed back out as a single **`ask_agent`** MCP tool. LLM provider: **Anthropic Claude API**, key held server-side only, never sent to the browser. | Gives a production-grade agent loop (planning, sub-agents, context management, human-in-the-loop tool approval) without hand-rolling one, and keeps the "one backend, one MCP interface" principle intact — the frontend never talks to Claude directly or holds a key, it just calls one more tool. Confirmed during research: Anthropic has no ephemeral/scoped-token mechanism for the plain Messages API usable by anonymous browser sessions (Workload Identity Federation only federates a *workload's own* cloud IdP identity), so a public, no-auth app cannot safely call Claude directly from the browser with our key. See §8. |
+| Rate limiting / abuse prevention | **Tiered, IP-keyed rate limiting** at the MCP server's HTTP layer (in-memory token buckets for the v1 single-instance deployment), plus a **persisted daily budget cap** for `ask_agent` stored in MongoDB. Expensive/mutating tools (`trigger_ingestion`, future `propose_new_jurisdiction`) are disabled or admin-gated, not publicly callable. | We have no accounts to attach per-user limits to, and `ask_agent` calls a paid API — needs abuse/runaway-cost protection from day one, not bolted on after a bill shock. See §9. |
 
 ## 4. System Architecture
 
@@ -69,41 +71,56 @@ so the hard design problems get solved once, on real data, rather than deferred.
                          │  meetings, agenda_items, actions,           │
                          │  vote_records, documents, topics,           │
                          │  embedding_chunks, platform_adapters,       │
-                         │  ingestion_runs                             │
+                         │  ingestion_runs, agent_usage_daily          │
                          │  + Atlas Vector Search + 2dsphere index     │
                          └───────────────▲──────────────┬─────────────┘
                                          │              │
-                     writes (upserts)    │              │ reads (tools/resources)
-                                         │              │
-                 ┌───────────────────────┴───┐   ┌──────┴─────────────────────────┐
-                 │     Ingestion Pipeline     │   │        MCP Server (Python)      │
-                 │  (Python, run on schedule  │   │  FastMCP: tools + resources     │
-                 │   or triggered on demand)  │   │  (ui:// MCP Apps resources)     │
-                 │                            │   │  + local embedding model        │
-                 │  discover → fetch → parse  │   │                                  │
-                 │  → normalize → resolve     │   │  Streamable HTTP transport       │
-                 │  → embed → store → link    │   └──────────────▲───────────────────┘
-                 │                            │                  │ MCP (tools/resources)
-                 │  Platform adapters:        │                  │
-                 │   granicus / legistar /    │   ┌──────────────┴───────────────────┐
-                 │   civicclerk / civicplus / │   │   React + TypeScript Frontend      │
-                 │   primegov / custom_html   │   │   (itself an MCP Host/Client)      │
-                 └────────────────────────────┘   │   @mcp-ui/client AppRenderer for    │
+                     writes (upserts)    │              │ reads (tools/resources) +
+                                         │              │ budget-cap read/write
+                 ┌───────────────────────┴───┐   ┌──────┴─────────────────────────────────────┐
+                 │     Ingestion Pipeline     │   │            MCP Server (Python, FastMCP)      │
+                 │  (Python, run on schedule  │   │  ┌─────────────────────────────────────────┐ │
+                 │   or triggered on demand)  │   │  │ Rate limiter (per-IP) + budget guard (§9)│ │
+                 │                            │   │  └─────────────────────────────────────────┘ │
+                 │  discover → fetch → parse  │   │  Structured tools + ui:// resources (§7)      │
+                 │  → normalize → resolve     │   │  ask_agent tool (§8) ──────┐                  │
+                 │  → embed → store → link    │   │                            ▼                  │
+                 │                            │   │                 Deep Agent (deepagents +       │
+                 │  Platform adapters:        │   │                 LangGraph), in-process,         │
+                 │   granicus / legistar /    │   │                 calls this server's own tools    │
+                 │   civicclerk / civicplus / │   │                 via langchain-mcp-adapters         │
+                 │   primegov / custom_html   │   │                            │                        │
+                 └────────────────────────────┘   │                            ▼                        │
+                                                   │                 Anthropic Claude API                │
+                                                   │                 (server-held key, never in browser)  │
+                                                   │  Streamable HTTP transport                            │
+                                                   └──────────────▲─────────────────────────────────────────┘
+                                                                  │ MCP (tools/resources)
+                                                   ┌──────────────┴───────────────────┐
+                                                   │   React + TypeScript Frontend      │
+                                                   │   (itself an MCP Host/Client)      │
+                                                   │   @mcp-ui/client AppRenderer for    │
                                                    │   rich widgets; plain components    │
-                                                   │   for lists/search/nav              │
+                                                   │   for lists/search/nav; calls        │
+                                                   │   ask_agent like any other tool      │
                                                    └──────────────────────────────────────┘
                                                                     ▲
                                                                     │ also reachable by
                                                                     │ any other MCP host
                                                           ┌─────────┴─────────┐
                                                           │  External AI agents │
-                                                          │  (Claude, etc.)     │
+                                                          │  (Claude Desktop,   │
+                                                          │   Cursor, etc. —    │
+                                                          │   their own key)    │
                                                           └─────────────────────┘
 ```
 
 Two independent Python processes share the same database and Pydantic models: the **ingestion pipeline**
-(writer) and the **MCP server** (reader, mostly). This separation lets us re-run/backfill ingestion without
-touching the live query path, and lets the MCP server stay fast and stateless.
+(writer) and the **MCP server** (reader, mostly, plus the agent's occasional `trigger_ingestion` call once that
+tool is enabled). This separation lets us re-run/backfill ingestion without touching the live query path, and
+lets the MCP server stay fast and stateless. Note the frontend never gains a second interface — `ask_agent` is
+just another MCP tool call from its point of view; all the LLM/agent complexity is hidden behind the MCP
+boundary, server-side.
 
 ## 5. Database Schema (general: town → federal)
 
@@ -275,14 +292,14 @@ class PlatformAdapter(ABC):
 `webapi.legistar.com` REST API) is extremely common among CA local governments. A single well-built
 `GranicusAdapter` (HTML/PDF-based, since Granicus's public-facing `AgendaViewer`/`MinutesViewer`/`ViewPublisher`
 pages don't expose a documented public API) is likely to cover most, possibly all, of Marin's 11 cities/towns
-plus the county — meaning most of Phase 2 (§8) could be pure configuration, not new code. Cities that turn out
+plus the county — meaning most of Phase 2 (§13) could be pure configuration, not new code. Cities that turn out
 to run Legistar, CivicClerk, CivicPlus AgendaCenter, or PrimeGov get their own adapter, built once and reused
 across every jurisdiction on that vendor everywhere in the country.
 
 **Detection heuristic** (`detect()`): check the jurisdiction's website for known vendor fingerprints (subdomain
 patterns like `*.granicus.com`, `webapi.legistar.com` references, CivicPlus/CivicClerk/PrimeGov script tags or
 URL patterns). Long-term this becomes an MCP tool (`propose_new_jurisdiction`) that an agent can call with just
-a city name/URL to scaffold a `jurisdictions` + `platform_adapters` record automatically — see Phase 6.
+a city name/URL to scaffold a `jurisdictions` + `platform_adapters` record automatically — see Phase 7+ (§13).
 
 ## 7. MCP Server Surface
 
@@ -301,7 +318,8 @@ a city name/URL to scaffold a `jurisdictions` + `platform_adapters` record autom
 | `get_official(person_id)` | Bio, tenure history, voting record. Returns an MCP-UI resource. |
 | `semantic_search(query, topic_filter?, jurisdiction_filter?, date_range?)` | Vector search over `embedding_chunks`. |
 | `list_topics()` / `get_topic(slug)` | Browse curated issues/movements; trend view. |
-| `trigger_ingestion(jurisdiction_slug)` | Admin/agent-triggered pipeline run (Phase 2+, access-controlled later). |
+| `ask_agent(question, jurisdiction_context?)` | The one agentic tool — see §8. Backed by a server-side deep agent; strictly rate-limited/budget-capped (§9). |
+| `trigger_ingestion(jurisdiction_slug)` | Pipeline run trigger. **Disabled/admin-only in v1** (no auth to gate it properly yet — see §9) — revisit once we have real access control. |
 
 **Resources** (`ui://`, MCP Apps / `text/html;profile=mcp-app`), used only where a rich widget earns its
 complexity: `ui://home-summary`, `ui://meeting/{id}`, `ui://action/{id}` (vote tally), `ui://official/{id}`
@@ -309,7 +327,84 @@ complexity: `ui://home-summary`, `ui://meeting/{id}`, `ui://action/{id}` (vote t
 lists, search results, nav) is plain `structuredContent` rendered by ordinary React components — we don't wrap
 every screen in an iframe just because we can.
 
-## 8. Frontend
+## 8. Agentic Layer: `ask_agent`
+
+This section resolves a design question worked through in detail during planning: how to give the app a real
+agentic/conversational mode without either (a) exposing our Anthropic API key in the browser, or (b) breaking
+the "frontend talks only to our MCP server" principle by bolting on a second, agent-specific backend interface.
+
+### Why the browser can't call Claude directly
+
+Anthropic supports direct browser→API calls via the `anthropic-dangerous-direct-browser-access` header, but
+that requires embedding a real API key in client code — viable only for "bring your own key" tools where the
+*user's own* key sits in their own browser. Anthropic's other non-static-key auth mechanism, **Workload
+Identity Federation**, exchanges a *workload's own* cloud-IdP identity (AWS/GCP/Azure/K8s/OIDC) for a
+short-lived Anthropic token — it authenticates a server we control, not an anonymous browser tab, so it doesn't
+help here either. Unlike Gemini Live or OpenAI Realtime, Anthropic has no "mint a short-lived, scoped token for
+an anonymous client" mechanism for the plain Messages API. **Conclusion: the Claude API call must happen
+server-side, behind our key, for a public multi-tenant app.** (A future "bring your own key" power-user mode
+is a possible later addition, but is not the default — see §14.)
+
+### Design: the agent lives behind one more MCP tool, not beside the MCP server
+
+- **Framework**: [`deepagents`](https://github.com/langchain-ai/deepagents) (LangChain/LangGraph's opinionated
+  agent harness) running **inside the Python MCP server process** (or a sibling process it calls in-process —
+  implementation detail, not a second public interface either way).
+- **Tools available to the deep agent**: the *same* tools defined in §7, loaded via `langchain-mcp-adapters`'
+  `MultiServerMCPClient` pointed at our own MCP endpoint. This means there is exactly one implementation of
+  "search meetings," "get an official's voting history," etc. — used identically by external agents, our own
+  frontend's direct tool calls, and our own backend agent. No duplicate tool logic.
+- **Model**: Anthropic Claude, called with a server-held `ANTHROPIC_API_KEY` (env var / secrets manager) —
+  never sent to, or readable from, the browser.
+- **Exposure**: the deep agent itself is wrapped in a single new tool, `ask_agent(question, jurisdiction_context?)`,
+  registered on our MCP server. From the frontend's perspective, asking the agent a question is just another
+  MCP tool call — it doesn't know or care that an LLM and a multi-step agent loop are involved. This keeps
+  Guiding Principle #4 ("one backend serves both humans and agents") intact even though we've added an LLM.
+- **Streaming**: MCP's token-level/streaming primitives ("tasks") are still experimental as of this writing.
+  For v1, `ask_agent` is a synchronous request/response tool call (optionally with MCP progress notifications
+  for coarse status like "Searching meetings…" while the agent works) rather than token-by-token streaming.
+  This is simpler to build and arguably more in keeping with a "minimal" UI — revisit once MCP task/streaming
+  primitives mature.
+- **Bonus, essentially free**: because our MCP server is a standard remote MCP server, anyone can already point
+  their *own* MCP host (Claude Desktop, Claude.ai custom connectors, Cursor, etc.) at it and get a fully
+  agentic experience using their own account/subscription — no key-exposure risk to us, no extra engineering.
+  Worth surfacing in docs/UI as "connect this to your own AI assistant" once we have a stable public URL.
+
+## 9. Rate Limiting & Abuse Prevention
+
+Because v1 has no accounts (§3), we can't attach limits to a user — every anonymous caller looks the same, and
+one of our tools (`ask_agent`) calls a paid external API. This needs guardrails from day one, not after a bill
+shock or an outage.
+
+### Tiers, by cost
+
+| Tier | Tools | v1 default limit (tunable via env) |
+|---|---|---|
+| Read-only / DB-only | `resolve_location`, `get_jurisdiction`, `list_jurisdictions`, `get_home_summary`, `search_meetings`, `get_meeting`, `search_actions`, `get_action`, `get_official`, `list_topics`, `get_topic` | Generous — e.g. 60 requests/min and 1,000/day per IP. |
+| Semantic search | `semantic_search` | Moderate — e.g. 20 requests/min per IP (embeds the query text, then a vector search). |
+| Agentic (paid LLM) | `ask_agent` | Strict per-IP cap (e.g. 5/hour) **and** a global daily budget cap shared across all callers (e.g. a max call count or estimated-token spend per day). Once the global cap is hit, respond with a graceful "high demand, please try search instead" message rather than an error. |
+| Mutating / admin | `trigger_ingestion`, future `propose_new_jurisdiction` | Not publicly reachable in v1 — disabled or gated behind a separate admin secret header, independent of the per-IP limiter. Real per-user access control arrives with accounts (Phase 7+). |
+
+### Implementation
+
+- **Per-IP limiting**: middleware in front of the MCP server's HTTP (Streamable HTTP) transport, keyed by
+  client IP, using a token-bucket/sliding-window algorithm. v1 keeps this **in-memory** since we're running a
+  single backend instance locally; the moment we run more than one instance (Phase 7+ real hosting), this
+  needs to move to a shared store (e.g. Redis) so limits are consistent across instances. Documented as an
+  explicit upgrade step, not a surprise.
+- **Global agent budget guard**: unlike the per-IP limiter, this must be authoritative and survive restarts, so
+  it's backed by MongoDB, not memory: a small `agent_usage_daily` collection (`{ _id: "2026-07-06",
+  ask_agent_calls, estimated_tokens, updated_at }`), incremented atomically on every `ask_agent` call. Cheap
+  enough to hit MongoDB for this, since `ask_agent` calls are inherently low-frequency compared to structured
+  tool calls.
+- **Basic hygiene alongside rate limiting**: request body size limits, per-connection concurrency caps, and
+  sane timeouts on every tool (especially `ask_agent`, which can otherwise run long agent loops indefinitely).
+- **What app-level limiting does *not* solve**: real volumetric DDoS protection belongs at the network/CDN
+  edge (e.g. Cloudflare or equivalent), which we don't have in the v1 local/dev deployment. This is flagged
+  explicitly as a prerequisite for real public hosting (Phase 7+), not something app code alone can fully
+  solve — see §15.
+
+## 10. Frontend
 
 React + TypeScript SPA that is itself an MCP Host/Client (Streamable HTTP transport):
 
@@ -321,8 +416,10 @@ React + TypeScript SPA that is itself an MCP Host/Client (Streamable HTTP transp
 - **Home page flow**: get the user's location (browser Geolocation API if permitted, else a manual
   city/address entry field — no IP-based inference by default, to avoid a hidden network dependency) →
   call `resolve_location` → call `get_home_summary` → render the returned UI resource.
+- **Agentic mode**: a minimal chat-style affordance that calls `ask_agent` like any other tool — no separate
+  client, no separate connection, no awareness that an LLM is involved on the other end.
 
-## 9. Semantic / Embedding Layer
+## 11. Semantic / Embedding Layer
 
 - **What gets embedded**: agenda item titles+descriptions, meeting minutes text, staff report text (chunked),
   and short summaries of actions/votes. Chunk size and overlap TBD during Phase 3 implementation.
@@ -336,57 +433,71 @@ React + TypeScript SPA that is itself an MCP Host/Client (Streamable HTTP transp
   plus a later auto-discovery pass (clustering `embedding_chunks`) to surface emergent issues without manual
   curation.
 
-## 10. Extensibility Roadmap (town → federal)
+## 12. Extensibility Roadmap (town → federal)
 
 Because `jurisdictions`/`governing_bodies`/`offices`/`meetings`/`actions`/`vote_records` are level-agnostic,
 expanding scope is additive, not a redesign:
 
 - **City/Town** (Phase 1–2): Novato → all 11 Marin cities/towns.
 - **County** (Phase 1): Marin County Board of Supervisors.
-- **Other CA counties/cities** (Phase 4): reuse the adapter registry; onboarding cost should visibly drop.
-- **State** (Phase 5): California State Assembly/Senate — new data source (e.g. `leginfo.legislature.ca.gov`),
+- **Other CA counties/cities** (Phase 5): reuse the adapter registry; onboarding cost should visibly drop.
+- **State** (Phase 6): California State Assembly/Senate — new data source (e.g. `leginfo.legislature.ca.gov`),
   same schema (`body` = chamber, `action` = bill vote, `vote_records` = roll call).
-- **Federal** (Phase 5+): U.S. Congress — new data source (e.g. congress.gov/GovInfo/ProPublica Congress API),
+- **Federal** (Phase 6+): U.S. Congress — new data source (e.g. congress.gov/GovInfo/ProPublica Congress API),
   same schema again.
 - **Special/school districts, JPAs** (opportunistic): already modeled via `level` enum; populate as encountered
   (Marin alone has ~127 local government bodies including school and special districts).
 
-## 11. Phased Milestones
+## 13. Phased Milestones
 
 - **Phase 0 — Foundations** *(this document + immediate next steps)*: repo scaffold, Atlas project, local
   embedding model chosen and smoke-tested, FastMCP skeleton, React app skeleton, Pydantic models mirroring §5.
 - **Phase 1 — Marin pilot, end to end**: seed `jurisdictions` for US/CA (stubs) + Marin County + Novato; build
   the `GranicusAdapter`; ingest current officeholders + recent meetings/agendas/minutes/votes for both; ship
-  the core MCP tools (§7, minus `semantic_search`/`trigger_ingestion`) and the home page + jurisdiction +
-  meeting + official views in the frontend. No embeddings yet — structured data first.
+  the core MCP tools (§7, minus `semantic_search`/`ask_agent`/`trigger_ingestion`) and the home page +
+  jurisdiction + meeting + official views in the frontend. No embeddings, no agent yet — structured data first.
+  Basic per-IP rate limiting on the read-only tier goes in now, even though the expensive tier doesn't exist
+  yet — cheap to add early, awkward to retrofit.
 - **Phase 2 — Rest of Marin**: onboard the remaining 10 cities/towns, maximizing `GranicusAdapter` reuse;
   populate `platform_adapters` properly; build one-off adapters only where a jurisdiction is on a different
   vendor.
 - **Phase 3 — Semantic layer**: embedding pipeline stage, `topics` taxonomy, `semantic_search` tool, topic
   trend UI resource.
-- **Phase 4 — Geographic expansion**: additional CA counties/cities, proving the adapter-reuse payoff.
-- **Phase 5 — State & federal**: California legislature, then U.S. Congress.
-- **Phase 6+**: agent-assisted onboarding (`propose_new_jurisdiction`), accounts/watchlists/alerts, real
-  hosting/deployment, auto-discovered topics via clustering.
+- **Phase 4 — Agentic layer & rate limiting hardening**: wire up `deepagents` + `langchain-mcp-adapters` against
+  our own MCP tools, ship the `ask_agent` tool and its minimal chat affordance in the frontend (§8); stand up
+  the tiered rate limiter and the `agent_usage_daily` budget guard (§9) before this tool is reachable publicly.
+- **Phase 5 — Geographic expansion**: additional CA counties/cities, proving the adapter-reuse payoff.
+- **Phase 6 — State & federal**: California legislature, then U.S. Congress.
+- **Phase 7+**: agent-assisted onboarding (`propose_new_jurisdiction`, now safely admin-gated), accounts/
+  watchlists/alerts, real hosting/deployment behind a CDN/WAF (upgrading the rate limiter to a shared store at
+  the same time), auto-discovered topics via clustering.
 
-## 12. Non-Goals for v1
+## 14. Non-Goals for v1
 
 - No user accounts, auth, or personalization.
-- No state/federal data (Phase 5+).
+- No state/federal data (Phase 6+).
 - No public write features (comments, petitions, etc.) — read-only civic data.
 - No mobile app — responsive web only.
-- No paid embedding/LLM API dependency for the core pipeline.
+- No paid embedding/LLM API dependency for the core ingestion/search pipeline (the agentic layer is the one
+  deliberate exception, and it's budget-capped — see §8–9).
+- No "bring your own API key" mode in v1 — `ask_agent` always uses our server-held key, budget-capped for
+  everyone. BYOK is a possible later power-user addition, not a v1 requirement.
 
-## 13. Open Questions (revisit as we build)
+## 15. Open Questions (revisit as we build)
 
 - Exact chunking strategy for embeddings (size/overlap) — decide during Phase 3 against real ingested text.
 - Whether `boundary` geometries come from US Census TIGER/Line shapefiles or another authoritative source —
   decide during Phase 1 implementation of `resolve_location`.
-- Long-term hosting target (Phase 6) — deferred per the local/dev-first decision.
+- Long-term hosting target (Phase 7+) — deferred per the local/dev-first decision, but real hosting must bring
+  CDN/WAF-level DDoS protection and a shared (Redis) rate-limit store, not just app-level limiting (§9).
 - Whether/when to add Atlas Automated Embedding as an alternative `EmbeddingProvider` once it exits Public
   Preview.
+- Exact v1 numeric rate-limit/budget values in §9 are starting defaults — tune against real usage once
+  `ask_agent` ships in Phase 4.
+- Whether MCP's experimental "tasks"/streaming primitives are mature enough by Phase 4 to give `ask_agent`
+  incremental output instead of request/response.
 
-## 14. Proposed Repo Structure (for the next step, not yet created)
+## 16. Proposed Repo Structure (for the next step, not yet created)
 
 ```
 what-the-rep/
@@ -394,12 +505,14 @@ what-the-rep/
   README.md
   backend/
     mcp_server/        # FastMCP app: tools, ui:// resources, prompts
+      middleware/        # rate_limiter.py, budget_guard.py (§9)
+    agent/              # deepagents setup, MultiServerMCPClient config, ask_agent tool (§8)
     ingestion/
       adapters/         # base.py, granicus.py, legistar.py, civicclerk.py, ...
       pipeline/          # discover.py, fetch.py, parse.py, normalize.py, resolve.py, embed.py, store.py, link.py
       registry/          # platform detection + jurisdiction seed data
     db/
-      models/            # Pydantic schemas mirroring §5
+      models/            # Pydantic schemas mirroring §5, incl. agent_usage_daily
     embeddings/          # local embedding model wrapper (EmbeddingProvider interface)
     tests/
     pyproject.toml
@@ -409,9 +522,10 @@ what-the-rep/
       ui-resources-host/ # AppRenderer + sandbox proxy integration
       components/
       pages/             # Home, Jurisdiction, Meeting, Official, Topic, Search
+      agent-chat/         # minimal ask_agent chat affordance
     package.json
   scripts/
     seed_marin.py        # bootstrap the 13 Phase-1 jurisdiction stubs
   docker-compose.yml      # backend + frontend for local dev (Mongo stays on Atlas)
-  .env.example
+  .env.example             # ANTHROPIC_API_KEY, rate-limit tuning vars, etc.
 ```

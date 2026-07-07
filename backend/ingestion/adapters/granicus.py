@@ -7,7 +7,7 @@ dataclass intermediate representation. Does not implement PlatformAdapter ABC ye
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -232,7 +232,9 @@ def _extract_motion_description(block: str) -> str:
         end = len(block)
     description = block[start:end].strip()
     description = re.sub(r"^to\s+", "", description, flags=re.IGNORECASE)
-    description = re.sub(r",\s*with Councilmember .+ voting No\.?\s*$", "", description, flags=re.IGNORECASE)
+    description = re.sub(
+        r",\s*with Councilmember .+ voting No\.?\s*$", "", description, flags=re.IGNORECASE
+    )
     description = re.sub(r"\s+", " ", description).strip(" ,")
     return description
 
@@ -263,7 +265,9 @@ def _parse_motions(text: str) -> tuple[Motion, ...]:
         seconded_by = _clean_official_name(mover_match.group(2)) if mover_match else None
 
         vote_count_match = _VOTE_COUNT_RE.search(block)
-        vote_tally = _parse_vote_count(vote_count_match.group(1)) if vote_count_match else VoteTally(0, 0)
+        vote_tally = (
+            _parse_vote_count(vote_count_match.group(1)) if vote_count_match else VoteTally(0, 0)
+        )
 
         roll_call = _parse_roll_call_block(block)
         description = _extract_motion_description(block)

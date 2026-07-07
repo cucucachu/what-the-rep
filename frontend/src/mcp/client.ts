@@ -1,10 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { DEFAULT_MCP_URL, getMcpUrl } from "./config.js";
-import type { McpConnectionStatus, McpToolInfo } from "./types.js";
+import type {
+  McpConnectionStatus,
+  McpResourceContent,
+  McpToolInfo,
+} from "./types.js";
+import { MCP_APP_MIME_TYPE } from "./types.js";
 
 const CLIENT_NAME = "what-the-rep-frontend";
 const CLIENT_VERSION = "0.0.0";
@@ -46,6 +51,28 @@ export function parseStructuredToolResult(result: CallToolResult): unknown {
   }
 
   return result.content ?? null;
+}
+
+function parseResourceContent(
+  uri: string,
+  result: ReadResourceResult,
+): McpResourceContent {
+  if (!result.contents || result.contents.length !== 1) {
+    throw new McpClientError(
+      `Expected 1 resource content for ${uri}, got ${result.contents?.length ?? 0}`,
+    );
+  }
+
+  const content = result.contents[0];
+  if (!("text" in content) || typeof content.text !== "string") {
+    throw new McpClientError(`Resource ${uri} has no HTML text content`);
+  }
+
+  return {
+    uri: content.uri ?? uri,
+    mimeType: content.mimeType ?? MCP_APP_MIME_TYPE,
+    text: content.text,
+  };
 }
 
 export class WhatTheRepMcpClient {
@@ -126,18 +153,32 @@ export class WhatTheRepMcpClient {
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
+      meta: tool._meta as McpToolInfo["meta"],
     }));
+  }
+
+  async callToolRaw(
+    name: string,
+    args: Record<string, unknown> = {},
+  ): Promise<CallToolResult> {
+    const client = this.requireConnectedClient();
+    return (await client.callTool({
+      name,
+      arguments: args,
+    })) as CallToolResult;
+  }
+
+  async readResource(uri: string): Promise<McpResourceContent> {
+    const client = this.requireConnectedClient();
+    const result = (await client.readResource({ uri })) as ReadResourceResult;
+    return parseResourceContent(uri, result);
   }
 
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
   ): Promise<unknown> {
-    const client = this.requireConnectedClient();
-    const result = (await client.callTool({
-      name,
-      arguments: args,
-    })) as CallToolResult;
+    const result = await this.callToolRaw(name, args);
     return parseStructuredToolResult(result);
   }
 

@@ -13,6 +13,7 @@ function createMockSdkClient(handlers: {
   connect?: Client["connect"];
   listTools?: Client["listTools"];
   callTool?: Client["callTool"];
+  readResource?: Client["readResource"];
 }): Client {
   return {
     connect: handlers.connect ?? vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,17 @@ function createMockSdkClient(handlers: {
       handlers.callTool ??
       vi.fn().mockResolvedValue({
         structuredContent: { status: "ok" },
+      }),
+    readResource:
+      handlers.readResource ??
+      vi.fn().mockResolvedValue({
+        contents: [
+          {
+            uri: "ui://what-the-rep/demo",
+            mimeType: "text/html;profile=mcp-app",
+            text: "<html><body>demo</body></html>",
+          },
+        ],
       }),
   } as unknown as Client;
 }
@@ -104,7 +116,11 @@ describe("WhatTheRepMcpClient", () => {
     mockClient = createMockSdkClient({
       listTools: vi.fn().mockResolvedValue({
         tools: [
-          { name: "list_jurisdictions", description: "List jurisdictions" },
+          {
+            name: "list_jurisdictions",
+            description: "List jurisdictions",
+            _meta: { ui: { resourceUri: "ui://what-the-rep/home-summary" } },
+          },
           { name: "ping", description: "Health check" },
         ],
       }),
@@ -119,8 +135,12 @@ describe("WhatTheRepMcpClient", () => {
     const tools = await client.listTools();
 
     expect(tools).toEqual([
-      { name: "list_jurisdictions", description: "List jurisdictions" },
-      { name: "ping", description: "Health check" },
+      {
+        name: "list_jurisdictions",
+        description: "List jurisdictions",
+        meta: { ui: { resourceUri: "ui://what-the-rep/home-summary" } },
+      },
+      { name: "ping", description: "Health check", meta: undefined },
     ]);
   });
 
@@ -178,5 +198,24 @@ describe("WhatTheRepMcpClient", () => {
     await expect(client.listTools()).rejects.toThrow(
       new McpClientError("MCP client is not connected"),
     );
+  });
+
+  it("readResource returns HTML content from resources/read", async () => {
+    const client = new WhatTheRepMcpClient("http://127.0.0.1:8000/mcp/", {
+      createSdkClient: () => mockClient,
+      createTransport: () => mockTransport,
+    });
+
+    await client.connect();
+    const resource = await client.readResource("ui://what-the-rep/demo");
+
+    expect(mockClient.readResource).toHaveBeenCalledWith({
+      uri: "ui://what-the-rep/demo",
+    });
+    expect(resource).toEqual({
+      uri: "ui://what-the-rep/demo",
+      mimeType: "text/html;profile=mcp-app",
+      text: "<html><body>demo</body></html>",
+    });
   });
 });

@@ -31,6 +31,7 @@ def tiny_limit_settings(monkeypatch: pytest.MonkeyPatch) -> ServerSettings:
         ),
         host="127.0.0.1",
         port=8000,
+        cors_allow_origins=("http://localhost:8080",),
     )
 
 
@@ -175,3 +176,56 @@ async def test_load_settings_reads_env_defaults(monkeypatch: pytest.MonkeyPatch)
     assert settings.rate_limit.per_minute == 60
     assert settings.rate_limit.per_day == 1000
     assert settings.hygiene.max_request_body_bytes == 1_048_576
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_allows_frontend_origin(
+    tiny_limit_settings: ServerSettings,
+    tiny_limiter: SlidingWindowRateLimiter,
+) -> None:
+    app = get_http_app(
+        settings=tiny_limit_settings,
+        limiter=tiny_limiter,
+        host_origin_protection=False,
+    )
+
+    async with _http_client_for_app(app) as client:
+        response = await client.options(
+            "/mcp",
+            headers={
+                "origin": "http://localhost:8080",
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type,mcp-session-id",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:8080"
+    allow_headers = response.headers.get("access-control-allow-headers", "").lower()
+    assert "mcp-session-id" in allow_headers
+
+
+@pytest.mark.asyncio
+async def test_cors_response_exposes_mcp_session_header(
+    tiny_limit_settings: ServerSettings,
+    tiny_limiter: SlidingWindowRateLimiter,
+) -> None:
+    app = get_http_app(
+        settings=tiny_limit_settings,
+        limiter=tiny_limiter,
+        host_origin_protection=False,
+    )
+
+    async with _http_client_for_app(app) as client:
+        response = await client.post(
+            "/mcp",
+            content=b"{}",
+            headers={
+                "content-type": "application/json",
+                "origin": "http://localhost:8080",
+            },
+        )
+
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:8080"
+    expose_headers = response.headers.get("access-control-expose-headers", "").lower()
+    assert "mcp-session-id" in expose_headers

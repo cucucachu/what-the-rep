@@ -20,6 +20,19 @@ def _env_float(name: str, default: float) -> float:
     return float(raw)
 
 
+DEFAULT_CORS_ALLOW_ORIGINS: tuple[str, ...] = (
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+)
+
+
+def _env_csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class RateLimitSettings:
     per_minute: int
@@ -39,6 +52,7 @@ class ServerSettings:
     hygiene: HygieneSettings
     host: str
     port: int
+    cors_allow_origins: tuple[str, ...]
 
 
 def load_settings() -> ServerSettings:
@@ -54,4 +68,5 @@ def load_settings() -> ServerSettings:
         ),
         host=os.environ.get("MCP_HOST", os.environ.get("FASTMCP_HOST", "127.0.0.1")),
         port=_env_int("MCP_PORT", _env_int("FASTMCP_PORT", 8000)),
+        cors_allow_origins=_env_csv("MCP_CORS_ALLOW_ORIGINS", DEFAULT_CORS_ALLOW_ORIGINS),
     )

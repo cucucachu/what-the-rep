@@ -1,0 +1,32 @@
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python / uv (backend) ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# --- Node / frontend ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- Playwright / test artifacts ---
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

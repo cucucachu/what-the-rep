@@ -1,0 +1,28 @@
+# Local dev skeleton for What The Rep (scaffold).
+#
+# This is intentionally a SKELETON — full service wiring (health checks,
+# volumes, the real MCP server / frontend commands, networking between
+# services) is completed in ticket T19. MongoDB is NOT a service here: we use
+# MongoDB Atlas (cloud) even in dev, configured via MONGODB_URI in .env.
+#
+# Copy .env.example to .env before running:  cp .env.example .env
+# Then:  docker compose up --build
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: what-the-rep-backend
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    image: what-the-rep-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"

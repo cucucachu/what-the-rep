@@ -62,3 +62,52 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install backend dependencies (frozen)
+        run: uv sync --frozen
+        working-directory: backend
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build frontend for E2E preview
+        run: npm run build
+        env:
+          VITE_MCP_URL: http://127.0.0.1:8000/mcp/
+
+      - name: Run E2E acceptance suite
+        run: npm run test:e2e
+        env:
+          CI: true
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DB_NAME: what_the_rep_e2e

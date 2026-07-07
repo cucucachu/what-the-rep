@@ -32,6 +32,7 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+frontend/e2e/.runtime/
 
 # --- Editor / OS ---
 .DS_Store

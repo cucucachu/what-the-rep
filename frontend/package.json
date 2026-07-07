@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:ci": "npm run build && playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

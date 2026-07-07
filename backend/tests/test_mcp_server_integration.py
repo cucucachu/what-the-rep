@@ -179,6 +179,24 @@ async def test_load_settings_reads_env_defaults(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
+async def test_healthz_returns_200(
+    tiny_limit_settings: ServerSettings,
+    tiny_limiter: SlidingWindowRateLimiter,
+) -> None:
+    app = get_http_app(
+        settings=tiny_limit_settings,
+        limiter=tiny_limiter,
+        host_origin_protection=False,
+    )
+
+    async with _http_client_for_app(app) as client:
+        response = await client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
 async def test_cors_preflight_allows_frontend_origin(
     tiny_limit_settings: ServerSettings,
     tiny_limiter: SlidingWindowRateLimiter,

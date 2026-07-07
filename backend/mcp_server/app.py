@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from mcp_server.config import ServerSettings, load_settings
 from mcp_server.middleware.http_limits import build_http_middleware
@@ -11,6 +15,11 @@ from mcp_server.tools import register_home_summary_tools, register_readonly_tool
 from mcp_server.ui.demo import register_debug_ui_demo_if_enabled
 
 MCP_SERVER_NAME = "what-the-rep"
+
+
+async def healthz(_request: Request) -> JSONResponse:
+    """Plain HTTP readiness probe for Playwright/CI (returns 200)."""
+    return JSONResponse({"status": "ok"})
 
 
 def create_mcp() -> FastMCP:
@@ -56,24 +65,25 @@ def get_http_app(
     mcp = mcp or create_mcp()
     limiter = limiter if limiter is not None else create_rate_limiter(settings)
     middleware = build_http_middleware(settings, limiter=limiter)
-    return mcp.http_app(
+    mcp_app = mcp.http_app(
         transport="streamable-http",
         middleware=middleware,
         host_origin_protection=host_origin_protection,
         allowed_origins=list(settings.cors_allow_origins),
     )
+    return Starlette(
+        routes=[
+            Route("/healthz", healthz, methods=["GET"]),
+            Mount("/", app=mcp_app),
+        ],
+        lifespan=mcp_app.lifespan,
+    )
 
 
 def serve() -> None:
     """Run the MCP server with Streamable HTTP transport."""
+    import uvicorn
+
     settings = load_settings()
-    mcp = create_mcp()
-    limiter = create_rate_limiter(settings)
-    middleware = build_http_middleware(settings, limiter=limiter)
-    mcp.run(
-        transport="streamable-http",
-        host=settings.host,
-        port=settings.port,
-        middleware=middleware,
-        allowed_origins=list(settings.cors_allow_origins),
-    )
+    app = get_http_app(settings=settings)
+    uvicorn.run(app, host=settings.host, port=settings.port)

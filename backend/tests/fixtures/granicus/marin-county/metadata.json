@@ -1,0 +1,17 @@
+{
+  "jurisdiction": "Marin County, CA",
+  "meeting_date": "2025-06-10",
+  "meeting_time": "09:00",
+  "meeting_type": "regular",
+  "body": "Marin County Board of Supervisors",
+  "clip_id": 12654,
+  "view_id": 33,
+  "agenda_filename": "agenda.html",
+  "minutes_filename": "minutes.html",
+  "source_urls": {
+    "agenda": "https://marin.granicus.com/AgendaViewer.php?view_id=33&clip_id=12654",
+    "minutes": "https://marin.granicus.com/MinutesViewer.php?clip_id=12654&doc_id=86b775e9-4870-11f0-b7f5-005056a89546&view_id=33",
+    "video": "https://marin.granicus.com/MediaPlayer.php?view_id=33&clip_id=12654"
+  },
+  "fixture_notes": "Captured 2026-07-06 from marin.granicus.com view_id=33. AgendaViewer/MinutesViewer return HTML (not PDF). Minutes use Marin 'M/s Supervisor' motion format with AYES: ALL roll calls."
+}

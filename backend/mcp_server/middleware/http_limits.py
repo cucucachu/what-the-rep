@@ -11,7 +11,7 @@ from threading import Lock
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from mcp_server.config import HygieneSettings
+from mcp_server.config import HygieneSettings, ServerSettings
 from mcp_server.middleware.rate_limiter import RateLimitResult, SlidingWindowRateLimiter
 
 SendCallable = Callable[[Message], Awaitable[None]]
@@ -217,3 +217,40 @@ def build_hygiene_middleware(
     if limiter is not None:
         middleware.append(Middleware(RateLimitMiddleware, limiter=limiter))
     return middleware
+
+
+def build_cors_middleware(settings: ServerSettings) -> list:
+    """Return CORS middleware so browser MCP clients can call the HTTP transport."""
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
+    if not settings.cors_allow_origins:
+        return []
+
+    return [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_allow_origins),
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "accept",
+                "accept-language",
+                "content-type",
+                "mcp-protocol-version",
+                "mcp-session-id",
+            ],
+            expose_headers=["mcp-session-id"],
+        )
+    ]
+
+
+def build_http_middleware(
+    settings: ServerSettings,
+    *,
+    limiter: SlidingWindowRateLimiter | None = None,
+) -> list:
+    """Return hygiene + CORS middleware for the Streamable HTTP app."""
+    return [
+        *build_cors_middleware(settings),
+        *build_hygiene_middleware(settings.hygiene, limiter=limiter),
+    ]

@@ -1,17 +1,24 @@
-# Frontend image (scaffold). Full runtime wiring lands in ticket T19.
-FROM node:22-bookworm-slim
+# Multi-stage build: Vite production bundle served by nginx.
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-# Install dependencies first (better layer caching), from the committed lockfile.
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy the rest of the source.
 COPY . .
 
-EXPOSE 5173
+# Baked at build time — must be reachable from the host browser, not a compose service name.
+ARG VITE_MCP_URL=http://localhost:8000/mcp/
+ENV VITE_MCP_URL=$VITE_MCP_URL
 
-# Placeholder command — dev server bound to all interfaces so it's reachable
-# from the host. Production serving strategy is decided in a later ticket.
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

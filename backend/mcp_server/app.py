@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from mcp_server.config import ServerSettings, load_settings
-from mcp_server.middleware.http_limits import build_hygiene_middleware
+from mcp_server.middleware.http_limits import build_http_middleware
 from mcp_server.middleware.rate_limiter import RateLimitWindow, SlidingWindowRateLimiter
 from mcp_server.tools import register_home_summary_tools, register_readonly_tools
 from mcp_server.ui.demo import register_debug_ui_demo_if_enabled
@@ -55,11 +55,12 @@ def get_http_app(
     settings = settings or load_settings()
     mcp = mcp or create_mcp()
     limiter = limiter if limiter is not None else create_rate_limiter(settings)
-    middleware = build_hygiene_middleware(settings.hygiene, limiter=limiter)
+    middleware = build_http_middleware(settings, limiter=limiter)
     return mcp.http_app(
         transport="streamable-http",
         middleware=middleware,
         host_origin_protection=host_origin_protection,
+        allowed_origins=list(settings.cors_allow_origins),
     )
 
 
@@ -68,10 +69,11 @@ def serve() -> None:
     settings = load_settings()
     mcp = create_mcp()
     limiter = create_rate_limiter(settings)
-    middleware = build_hygiene_middleware(settings.hygiene, limiter=limiter)
+    middleware = build_http_middleware(settings, limiter=limiter)
     mcp.run(
         transport="streamable-http",
         host=settings.host,
         port=settings.port,
         middleware=middleware,
+        allowed_origins=list(settings.cors_allow_origins),
     )

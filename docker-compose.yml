@@ -1,28 +1,70 @@
-# Local dev skeleton for What The Rep (scaffold).
+# Full local dev stack — MongoDB + seed + backend MCP server + frontend.
 #
-# This is intentionally a SKELETON — full service wiring (health checks,
-# volumes, the real MCP server / frontend commands, networking between
-# services) is completed in ticket T19. MongoDB is NOT a service here: we use
-# MongoDB Atlas (cloud) even in dev, configured via MONGODB_URI in .env.
+# One command brings up everything:
+#   docker compose up --build
 #
-# Copy .env.example to .env before running:  cp .env.example .env
-# Then:  docker compose up --build
+# Frontend: http://localhost:8080
+# Backend MCP: http://localhost:8000/mcp/
 
 services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  seed:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: what-the-rep-backend
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB_NAME: what_the_rep
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "python", "/scripts/seed_all.py"]
+    restart: "no"
+
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     image: what-the-rep-backend
-    env_file:
-      - .env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB_NAME: what_the_rep
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_CORS_ALLOW_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
     ports:
       - "8000:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_MCP_URL: http://localhost:8000/mcp/
     image: what-the-rep-frontend
-    depends_on:
-      - backend
     ports:
-      - "5173:5173"
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

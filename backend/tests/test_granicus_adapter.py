@@ -64,7 +64,7 @@ def adapter() -> GranicusAdapter:
 
 @pytest.fixture
 def meeting_detail(adapter: GranicusAdapter):
-    return adapter.fetch_meeting_detail(FIXTURE_DIR)
+    return adapter.parse_fixture_dir(FIXTURE_DIR)
 
 
 def test_meeting_metadata(meeting_detail) -> None:
@@ -111,7 +111,7 @@ def test_non_unanimous_motion_attached_to_agenda_item_i1(meeting_detail) -> None
 
 
 def test_fetch_minutes_returns_motions(adapter: GranicusAdapter) -> None:
-    minutes = adapter.fetch_minutes(FIXTURE_DIR)
+    minutes = adapter.parse_minutes(FIXTURE_DIR / "minutes.pdf")
     assert minutes.meeting_date == date(2024, 1, 23)
     non_unanimous = [m for m in minutes.motions if m.roll_call.noes]
     assert len(non_unanimous) >= 1

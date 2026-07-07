@@ -126,10 +126,6 @@ async def _snapshot_jurisdictions(db) -> list[dict]:
     docs = []
     async for doc in db.jurisdictions.find({}).sort("slug", 1):
         docs.append(
-            {
-                key: value
-                for key, value in doc.items()
-                if key not in {"created_at", "updated_at"}
-            }
+            {key: value for key, value in doc.items() if key not in {"created_at", "updated_at"}}
         )
     return docs

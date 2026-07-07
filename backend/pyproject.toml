@@ -5,7 +5,9 @@ description = "What The Rep backend: FastMCP server, ingestion pipeline, and emb
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "fastmcp>=2.0",
+    "pdfplumber>=0.11.10",
 ]
 
 [dependency-groups]

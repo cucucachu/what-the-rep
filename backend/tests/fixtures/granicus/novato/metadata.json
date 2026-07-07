@@ -1,0 +1,14 @@
+{
+  "jurisdiction": "City of Novato, CA",
+  "meeting_date": "2024-01-23",
+  "meeting_time": "18:00",
+  "meeting_type": "regular",
+  "body": "City Council",
+  "clip_id": 1980,
+  "view_id": 7,
+  "source_urls": {
+    "minutes": "https://novato.granicus.com/MinutesViewer.php?clip_id=1980&doc_id=ae6debb3-cb8b-11ee-8fe8-0050569183fa&view_id=7",
+    "agenda": "https://novato.granicus.com/AgendaViewer.php?view_id=7&clip_id=1980"
+  },
+  "fixture_notes": "Granicus MinutesViewer and AgendaViewer URLs return PDF bytes (not HTML) despite the .php extension. Text is machine-readable via pdfplumber."
+}

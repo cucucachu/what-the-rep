@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -21,6 +22,8 @@ from ingestion.pipeline.normalize import normalize_meeting
 from ingestion.pipeline.parse import parse_meeting_detail
 from ingestion.pipeline.resolve import resolve_officials
 from ingestion.pipeline.store import store_meeting_graph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -92,22 +95,29 @@ async def run_ingestion_pipeline(
                 parsed,
                 is_marin=jurisdiction_slug == "marin-county-ca",
             )
-            resolved = await resolve_officials(
+            resolve_result = await resolve_officials(
                 db,
                 normalized,
                 jurisdiction_id=jurisdiction_id,
                 body_id=body_id,
+                ingestion_run_id=run_id,
             )
-            embed_meeting(resolved)
+            if resolve_result.unresolved_names:
+                logger.warning(
+                    "Meeting %s unresolved officials: %s",
+                    normalized.external_id,
+                    resolve_result.unresolved_names,
+                )
+            embed_meeting(resolve_result.meeting)
             stored = await store_meeting_graph(
                 db,
-                resolved,
+                resolve_result.meeting,
                 jurisdiction_id=jurisdiction_id,
                 body_id=body_id,
                 ingestion_run_id=run_id,
                 now=started_at,
             )
-            link_topics(resolved)
+            link_topics(resolve_result.meeting)
             stats.meetings_upserted += stored.stats.meetings_upserted
             stats.agenda_items_upserted += stored.stats.agenda_items_upserted
             stats.actions_upserted += stored.stats.actions_upserted

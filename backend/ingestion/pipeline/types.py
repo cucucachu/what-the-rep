@@ -24,6 +24,7 @@ class NormalizedVoteRecord:
     vote: Vote
     office_tenure_id: str | None = None
     person_id: str | None = None
+    resolution_status: str | None = None  # "matched" | "unresolved"
 
 
 @dataclass

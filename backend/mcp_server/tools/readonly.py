@@ -20,6 +20,7 @@ from mcp_server.tools.filters import (
     resolve_body_id,
     resolve_jurisdiction_id,
 )
+from mcp_server.tools.location import resolve_location_at_point
 from mcp_server.tools.serialize import serialize_doc, serialize_docs
 
 RECENT_ACTIVITY_DAYS = 90
@@ -32,6 +33,22 @@ async def _db() -> AsyncIOMotorDatabase:
 
 def register_readonly_tools(mcp: FastMCP) -> None:
     """Register all read-only structured query tools on the given FastMCP instance."""
+
+    @mcp.tool
+    async def resolve_location(
+        lat: float,
+        lng: float,
+        address: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the jurisdiction stack for a latitude/longitude point.
+
+        Returns the most specific matching jurisdiction (city or county) plus its
+        ancestors (state, federal). Points outside the Marin pilot coverage area
+        return ``covered: false`` with an explanatory message.
+        """
+        _ = address
+        db = await _db()
+        return await resolve_location_at_point(db, lat, lng)
 
     @mcp.tool
     async def get_jurisdiction(slug: str) -> dict[str, Any]:

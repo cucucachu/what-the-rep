@@ -7,7 +7,7 @@ from pydantic import Field
 from db.models.common import (
     CivicPlatformRef,
     FipsCodes,
-    GeoJsonPolygon,
+    GeoJsonBoundary,
     MongoDocument,
     PyObjectId,
     SourceRef,
@@ -25,7 +25,7 @@ class Jurisdiction(MongoDocument):
     fips: FipsCodes | None = None
     population: int | None = None
     website: str | None = None
-    boundary: GeoJsonPolygon | None = None
+    boundary: GeoJsonBoundary | None = None
     incorporated_date: date | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
     civic_platforms: list[CivicPlatformRef] = Field(default_factory=list)

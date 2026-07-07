@@ -12,6 +12,15 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 
+# TIGER/Line download cache (committed fixtures live under backend/tests/fixtures/boundaries/)
+wtr_tiger_cache/
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.zip
+
 # --- Node / frontend ---
 node_modules/
 dist/

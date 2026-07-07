@@ -1,10 +1,10 @@
 """Shared Pydantic types for MongoDB documents."""
 
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from bson import ObjectId
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, field_validator
 from pydantic_core import core_schema
 
 from db.models.enums import SourceMethod
@@ -100,8 +100,17 @@ class GeoJsonPoint(BaseModel):
 
 
 class GeoJsonPolygon(BaseModel):
-    type: str = "Polygon"
+    type: Literal["Polygon"] = "Polygon"
     coordinates: list[list[list[float]]]
+
+
+class GeoJsonMultiPolygon(BaseModel):
+    type: Literal["MultiPolygon"] = "MultiPolygon"
+    coordinates: list[list[list[list[float]]]]
+
+
+GeoJsonBoundary = Annotated[GeoJsonPolygon | GeoJsonMultiPolygon, Field(discriminator="type")]
+GEOJSON_BOUNDARY_ADAPTER = TypeAdapter(GeoJsonBoundary)
 
 
 class MeetingLocation(BaseModel):

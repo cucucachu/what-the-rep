@@ -13,10 +13,10 @@ const mongoUri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
 const mongoDbName = process.env.MONGODB_DB_NAME ?? "what_the_rep_e2e";
 const corsOrigins = `http://127.0.0.1:${frontendPort},http://localhost:${frontendPort}`;
 
-// Option B: Playwright webServer boots backend (uv) + frontend (vite preview) with a
-// global-setup that seeds Mongo and builds the app. Readiness uses url polling on
-// GET /healthz (200). Playwright only treats status codes 200-403 as ready, so
-// /mcp (406 after redirect) cannot be used as the readiness URL.
+// Option B: Playwright webServer boots backend (uv) + frontend (vite preview).
+// Playwright starts webServer BEFORE globalSetup, so `dist/` must already exist
+// (run `npm run build` first, or `npm run test:e2e:ci`). Readiness uses url polling
+// on GET /healthz (200). GET /mcp returns 406 after redirect, which Playwright rejects.
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",

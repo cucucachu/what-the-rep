@@ -100,6 +100,11 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Build frontend for E2E preview
+        run: npm run build
+        env:
+          VITE_MCP_URL: http://127.0.0.1:8000/mcp/
+
       - name: Run E2E acceptance suite
         run: npm run test:e2e
         env:

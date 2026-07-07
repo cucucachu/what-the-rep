@@ -4,8 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendRoot = path.resolve(__dirname, "..");
-const repoRoot = path.resolve(frontendRoot, "..");
+const repoRoot = path.resolve(__dirname, "..", "..");
 const manifestPath = path.join(__dirname, ".runtime", "fixture-manifest.json");
 
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
@@ -23,7 +22,14 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 export default async function globalSetup() {
   const mongoUri = process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017";
   const dbName = process.env.MONGODB_DB_NAME ?? "what_the_rep_e2e";
-  const mcpUrl = process.env.VITE_MCP_URL ?? "http://127.0.0.1:8000/mcp/";
+
+  const distIndex = path.join(__dirname, "..", "dist", "index.html");
+  if (!fs.existsSync(distIndex)) {
+    throw new Error(
+      `Missing ${distIndex}. Playwright starts webServer before globalSetup, so ` +
+        "run `npm run build` (with VITE_MCP_URL set) before `npm run test:e2e`.",
+    );
+  }
 
   const seedEnv = {
     ...process.env,
@@ -56,10 +62,4 @@ export default async function globalSetup() {
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`Fixture manifest was not created at ${manifestPath}`);
   }
-
-  console.log("[e2e] Building frontend for preview …");
-  run("npm", ["run", "build"], frontendRoot, {
-    ...process.env,
-    VITE_MCP_URL: mcpUrl,
-  });
 }

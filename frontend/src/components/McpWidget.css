@@ -1,0 +1,32 @@
+.mcp-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 12rem;
+}
+
+.mcp-widget__frame {
+  flex: 1;
+  min-height: 12rem;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.mcp-widget__loading,
+.mcp-widget__error {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+}
+
+.mcp-widget__loading {
+  background: var(--surface-muted, #f6f8fa);
+  color: var(--text-muted, #57606a);
+}
+
+.mcp-widget__error {
+  background: #ffebe9;
+  color: #cf222e;
+}

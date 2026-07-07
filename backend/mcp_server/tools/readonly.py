@@ -29,6 +29,12 @@ from mcp_server.ui.action_vote_tally import (
     set_latest_action_vote_tally_data,
 )
 from mcp_server.ui.helpers import register_html_ui_resource, ui_app_config
+from mcp_server.ui.official_voting_history import (
+    OFFICIAL_VOTING_HISTORY_URI,
+    get_latest_official_voting_history_data,
+    render_official_voting_history_html,
+    set_latest_official_voting_history_data,
+)
 
 RECENT_ACTIVITY_DAYS = 90
 DEFAULT_SEARCH_LIMIT = 50
@@ -64,6 +70,13 @@ def register_readonly_tools(mcp: FastMCP) -> None:
         mcp,
         ACTION_VOTE_TALLY_URI,
         lambda: render_action_vote_tally_html(get_latest_action_vote_tally_data()),
+    )
+    register_html_ui_resource(
+        mcp,
+        OFFICIAL_VOTING_HISTORY_URI,
+        lambda: render_official_voting_history_html(
+            get_latest_official_voting_history_data(),
+        ),
     )
 
     @mcp.tool
@@ -434,17 +447,25 @@ def register_readonly_tools(mcp: FastMCP) -> None:
         )
         return result
 
-    @mcp.tool
+    @mcp.tool(app=ui_app_config(OFFICIAL_VOTING_HISTORY_URI))
     async def get_official(person_id: str) -> dict[str, Any]:
-        """Return an official's bio, tenure history, and voting record."""
+        """Return an official's bio, tenure history, and voting record.
+
+        The linked ``ui://official-voting-history`` widget renders the bio header,
+        tenure timeline, and voting record server-side.
+        """
         db = await _db()
         id_filter = id_lookup_filter(person_id)
         if id_filter is None:
-            return {"found": False, "person_id": person_id}
+            not_found = {"found": False, "person_id": person_id}
+            set_latest_official_voting_history_data(not_found)
+            return not_found
 
         person = await db.people.find_one(id_filter)
         if person is None:
-            return {"found": False, "person_id": person_id}
+            not_found = {"found": False, "person_id": person_id}
+            set_latest_official_voting_history_data(not_found)
+            return not_found
 
         person_oid = person["_id"]
         tenures = (
@@ -511,9 +532,11 @@ def register_readonly_tools(mcp: FastMCP) -> None:
                 }
             )
 
-        return {
+        result = {
             "found": True,
             "person": serialize_doc(person),
             "tenure_history": tenure_history,
             "voting_record": voting_record,
         }
+        set_latest_official_voting_history_data(result)
+        return result

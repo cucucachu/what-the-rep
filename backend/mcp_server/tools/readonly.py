@@ -22,6 +22,13 @@ from mcp_server.tools.filters import (
 )
 from mcp_server.tools.location import resolve_location_at_point
 from mcp_server.tools.serialize import serialize_doc, serialize_docs
+from mcp_server.ui.action_vote_tally import (
+    ACTION_VOTE_TALLY_URI,
+    get_latest_action_vote_tally_data,
+    render_action_vote_tally_html,
+    set_latest_action_vote_tally_data,
+)
+from mcp_server.ui.helpers import register_html_ui_resource, ui_app_config
 
 RECENT_ACTIVITY_DAYS = 90
 DEFAULT_SEARCH_LIMIT = 50
@@ -31,8 +38,33 @@ async def _db() -> AsyncIOMotorDatabase:
     return get_db()
 
 
+async def _fetch_officeholder_by_tenure_id(
+    db: AsyncIOMotorDatabase,
+    tenure_id: Any,
+) -> dict[str, Any] | None:
+    """Join person + office for one office-tenure id (mover/seconder display)."""
+    if tenure_id is None:
+        return None
+    tenure = await db.office_tenures.find_one(ref_lookup_filter("_id", str(tenure_id)))
+    if tenure is None:
+        return None
+    person = await db.people.find_one(ref_lookup_filter("_id", str(tenure["person_id"])))
+    office = await db.offices.find_one(ref_lookup_filter("_id", str(tenure["office_id"])))
+    return {
+        "person": serialize_doc(person),
+        "office_tenure": serialize_doc(tenure),
+        "office": serialize_doc(office),
+    }
+
+
 def register_readonly_tools(mcp: FastMCP) -> None:
     """Register all read-only structured query tools on the given FastMCP instance."""
+
+    register_html_ui_resource(
+        mcp,
+        ACTION_VOTE_TALLY_URI,
+        lambda: render_action_vote_tally_html(get_latest_action_vote_tally_data()),
+    )
 
     @mcp.tool
     async def resolve_location(
@@ -315,17 +347,25 @@ def register_readonly_tools(mcp: FastMCP) -> None:
         serialized = serialize_docs(actions)
         return {"actions": serialized, "count": len(serialized)}
 
-    @mcp.tool
+    @mcp.tool(app=ui_app_config(ACTION_VOTE_TALLY_URI))
     async def get_action(action_id: str) -> dict[str, Any]:
-        """Return one action with roll-call vote records joined to people and tenures."""
+        """Return one action with roll-call vote records joined to people and tenures.
+
+        The linked ``ui://action-vote-tally`` widget renders the roll-call breakdown
+        server-side (tally summary, grouped voters, outcome, mover/seconder).
+        """
         db = await _db()
         id_filter = id_lookup_filter(action_id)
         if id_filter is None:
-            return {"found": False, "action_id": action_id}
+            not_found = {"found": False, "action_id": action_id}
+            set_latest_action_vote_tally_data(not_found)
+            return not_found
 
         action = await db.actions.find_one(id_filter)
         if action is None:
-            return {"found": False, "action_id": action_id}
+            not_found = {"found": False, "action_id": action_id}
+            set_latest_action_vote_tally_data(not_found)
+            return not_found
 
         action_oid = action["_id"]
         meeting = await db.meetings.find_one(
@@ -368,7 +408,16 @@ def register_readonly_tools(mcp: FastMCP) -> None:
         document_ids = action.get("document_ids", [])
         documents = await db.documents.find({"_id": {"$in": document_ids}}).to_list(length=50)
 
-        return {
+        moved_by = await _fetch_officeholder_by_tenure_id(
+            db,
+            action.get("moved_by_office_tenure_id"),
+        )
+        seconded_by = await _fetch_officeholder_by_tenure_id(
+            db,
+            action.get("seconded_by_office_tenure_id"),
+        )
+
+        result = {
             "found": True,
             "action": serialize_doc(action),
             "meeting": serialize_doc(meeting),
@@ -376,6 +425,14 @@ def register_readonly_tools(mcp: FastMCP) -> None:
             "vote_records": roll_call,
             "documents": serialize_docs(documents),
         }
+        set_latest_action_vote_tally_data(
+            {
+                **result,
+                "moved_by": moved_by,
+                "seconded_by": seconded_by,
+            },
+        )
+        return result
 
     @mcp.tool
     async def get_official(person_id: str) -> dict[str, Any]:

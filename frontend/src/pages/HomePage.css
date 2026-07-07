@@ -1,0 +1,127 @@
+.home-page {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.home-page h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.home-page__intro {
+  margin: 0 0 1rem;
+  color: #475569;
+}
+
+.home-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.home-page button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.5rem 0.875rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.home-page button:hover {
+  background: #f1f5f9;
+}
+
+.home-page__link-button {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  padding: 0.25rem 0;
+  text-decoration: underline;
+}
+
+.home-page__link-button:hover {
+  background: transparent;
+  color: #1d4ed8;
+}
+
+.home-page__status {
+  margin: 0 0 1rem;
+  color: #475569;
+}
+
+.home-page__geo-error {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.home-page__manual-form {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid #d8dee9;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.75rem;
+  max-width: 24rem;
+}
+
+.home-page__manual-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.home-page__manual-form input {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.home-page__manual-form input:disabled {
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.home-page__address-label {
+  color: #64748b;
+}
+
+.home-page__coverage,
+.home-page__error {
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.home-page__coverage {
+  background: #f8fafc;
+  border: 1px solid #d8dee9;
+}
+
+.home-page__coverage p {
+  margin: 0 0 1rem;
+  color: #475569;
+}
+
+.home-page__error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.home-page__error p {
+  margin: 0 0 0.75rem;
+}
+
+.home-page__summary {
+  margin-top: 0.5rem;
+}
